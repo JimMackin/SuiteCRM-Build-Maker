@@ -5,37 +5,7 @@ error_reporting(E_ALL);
 
 $suitecrmGitLoc = 'https://github.com/salesagility/SuiteCRM';
 $repoLoc = './SuiteCRMRepo';
-$blackList = array('.','..','.git','.gitignore','README.md');
-
-if(count($argv) < 2){
-    showUsage();
-    die();
-}
-$command = $argv[1];
-switch($command){
-    case 'installer':
-        if(count($argv) < 3){
-            showUsage();
-            die();
-        }
-        doInstallerPackage($argv[2],$repoLoc,$suitecrmGitLoc);
-        break;
-    case 'upgrader':
-        if(count($argv) < 3){
-            showUsage();
-            die();
-        }
-        doUpgradePackage($argv[2],$argv[3],$repoLoc,$blackList);
-        break;
-    case 'help':
-        showUsage();
-        break;
-    default:
-        echo "Unrecognised command\n";
-        showUsage();
-        break;
-}
-die();
+$maker = new SuiteCRMBuildMaker($repoLoc,$suitecrmGitLoc);
 
 function showUsage(){
     $script = __FILE__;
@@ -47,211 +17,231 @@ Usage:
 <?php
 }
 
-function doInstallerPackage($currentTag,$repoLoc,$suitecrmGitLoc){
-    $git = setupGit($repoLoc,$suitecrmGitLoc);
-    $git->checkout("tags/$currentTag");
-    $zip = new ZipArchive();
-    $filename = "./".$currentTag.".".date('Ymd').".zip";
-    if ($zip->open($filename, ZipArchive::CREATE)!==TRUE) {
-        echo "Cannot open <$filename>\n";
-        die();
-    }
-    foreach(getInstallerFiles($repoLoc) as $file){
-        $zip->addFile($file, substr($file,strlen($repoLoc)));
-    }
-    $zip->close();
-    echo "Written $currentTag installer to $filename\n";
+if(count($argv) < 2){
+    showUsage();
+    die();
 }
-
-function setupGit($repoLoc,$suitecrmGitLoc){
-    $git = new PHPGit\Git();
-    if(!file_exists($repoLoc . DIRECTORY_SEPARATOR . '.git')){
-        echo "No repo! Cloning $repoLoc now...\n";
-        $git->clone($suitecrmGitLoc, $repoLoc);
-    }
-    $git->setRepository($repoLoc);
-    $git->fetch('origin');
-    return $git;
-}
-//$blackList = array('.','..','.git','.gitignore','README.md');
-
-//doUpgradePackage('v7.3','v7.3.1',$repoLoc, $blackList);
-die();
-//echo "Processing $tag\n";
-//$git->checkout("tags/$currentTag");
-
-
-//$zip = new ZipArchive();
-//$filename = "./".$currentTag.".".date('Ymd').".zip";
-//if ($zip->open($filename, ZipArchive::CREATE)!==TRUE) {
-//    echo "Cannot open <$filename>\n";
-//    die();
-//}
-function getInstallerFiles($repoLoc){
-    $files = array();
-    $blacklist = array('.','..','.git','.gitignore','README.md');
-    foreach(scandir($repoLoc) as $file){
-        if(in_array($file,$blacklist)){
-            continue;
+$command = $argv[1];
+switch($command){
+    case 'installer':
+        if(count($argv) < 3){
+            showUsage();
+            return 1;
         }
-        $file = $repoLoc."/".$file;
-        if(is_dir($file)){
-            $files = array_merge($files,getInstallerFiles($file));
-        }else{
-            $files[$file] = $file;
+        return $maker->doInstallerPackage($argv[2]);
+    case 'upgrader':
+        if(count($argv) < 3){
+            showUsage();
+            return 1;
         }
-//              echo $file."\n";
+        return $maker->doUpgradePackage($argv[2],$argv[3]);
+        break;
+    case 'help':
+        showUsage();
+        return 0;
+    default:
+        echo "Unrecognised command\n";
+        showUsage();
+        return 1;
+}
+
+
+class SuiteCRMBuildMaker{
+
+    var $verbosity = SuiteCRMBuildMaker::NORMAL_LOGGING;
+    var $git;
+    var $repoLoc;
+    var $gitLoc;
+    var $fromTag;
+    var $toTag;
+    var $blackList;
+    const QUIET_LOGGING = 0;
+    const NORMAL_LOGGING = 1;
+    const VERBOSE_LOGGING = 2;
+
+    public function __construct($repoLoc, $gitLoc){
+        $this->repoLoc = $repoLoc;
+        $this->gitLoc = $gitLoc;
+        $this->setupGit();
+        $this->blackList = array('.','..','.git','.gitignore','README.md');
     }
-    return $files;
-}
 
-//print_r(getInstallerFiles($repoLoc));
-//die();
-//foreach(getInstallerFiles($repoLoc) as $file){
-//    $zip->addFile($file, substr($file,strlen($repoLoc)));
-//}
-//$zip->close();
-
-
-function getDeletedFiles($fromTag, $toTag, $repoLoc){
-    $command = "cd $repoLoc; git diff --name-only 'tags/$fromTag' 'tags/$toTag' --diff-filter=D";
-    $outFiles = array();
-    exec($command,$outFiles);
-    return $outFiles;
-}
-
-function getModifiedFiles($fromTag, $toTag, $repoLoc){
-    $command = "cd $repoLoc; git diff --name-only 'tags/$fromTag' 'tags/$toTag' --diff-filter=ACMRT";
-    echo "Command is $command\n";
-    $outFiles = array();
-    exec($command,$outFiles);
-    return $outFiles;
-}
-
-function doUpgradePackage($fromTag, $toTag, $repoLoc, $blackList){
-    
-    //$command = "cd $repoLoc; git diff --name-only 'tags/$fromTag' 'tags/$toTag' --diff-filter=ACMRT";
-    //$outFiles = array();
-    //exec($command,$outFiles);
-    //print_r($outFiles);
-    $outFiles = getModifiedFiles($fromTag, $toTag, $repoLoc);
-    $deletedFiles = getDeletedFiles($fromTag, $toTag, $repoLoc);
-    echo "Deleted files: \n";
-    print_r($deletedFiles);
-    $zip = new ZipArchive();
-    $filename = "SuiteCRM-Upgrade-$fromTag-to-$toTag.zip";
-    $fileDir = "SuiteCRM-Upgrade-$fromTag-to-$toTag";
-    if ($zip->open($filename, ZipArchive::CREATE)!==TRUE) {
-        echo "Cannot open <$filename>\n";
-        die();
-    }
-    echo "Created $filename\n";
-
-    //Get list of files
-    //Add to zip
-    foreach($outFiles as $out){
-        if(!is_file($repoLoc."/".$out)){
-            continue;
+    public function log($msg, $verbosity){
+        if($verbosity <= $this->verbosity){
+            echo $msg . "\n";
         }
-        $res = $zip->addFile($repoLoc."/".$out,$fileDir."/".$out);
-        if(!$res){
-            echo "Failed adding file $out\n";
-            var_dump($zip->getStatusString());
-            die();
+    }
+
+    public function doInstallerPackage($tag){
+        $this->log("Creating package for $tag", SuiteCRMBuildMaker::NORMAL_LOGGING);
+        $this->git->checkout("tags/$tag");
+        $zip = new ZipArchive();
+        $filename = "./".$tag.".".date('Ymd').".zip";
+        if ($zip->open($filename, ZipArchive::CREATE)!==TRUE) {
+            $this->log("Cannot open <$filename>",SuiteCRMBuildMaker::QUIET_LOGGING);
+            return 2;
         }
-        echo "Added $out\n";
-    }
-    //Add manifest
-    $res = $zip->addFromString('manifest.php',getManifestString($fromTag,$toTag));
-    if(!$res){
-        echo "Failed adding manifest\n";
-        var_dump($zip->getStatusString());
-        die();
+        foreach($this->getInstallerFiles($this->repoLoc) as $file){
+            $zip->addFile($file, substr($file,strlen($this->repoLoc)));
+        }
+        $zip->close();
+        $this->log("Written $tag installer to $filename",SuiteCRMBuildMaker::NORMAL_LOGGING);
+        return 0;
     }
 
-    $res = $zip->addEmptyDir('scripts');
-    if(!$res){
-        echo "Failed adding empty scripts directory\n";
-        var_dump($zip->getStatusString());
-        die();
+    public function doUpgradePackage($fromTag, $toTag){
+      $this->log("Creating upgrade package for $fromTag to $toTag", SuiteCRMBuildMaker::NORMAL_LOGGING);
+      $outFiles = $this->getModifiedFiles($fromTag, $toTag);
+
+      $zip = new ZipArchive();
+      $filename = "SuiteCRM-Upgrade-$fromTag-to-$toTag.zip";
+      $fileDir = "SuiteCRM-Upgrade-$fromTag-to-$toTag";
+
+      if ($zip->open($filename, ZipArchive::CREATE)!==TRUE) {
+          $this->log("Cannot open <$filename>", SuiteCRMBuildMaker::QUIET_LOGGING);
+          return 1;
+      }
+      $this->log("Created $filename", SuiteCRMBuildMaker::NORMAL_LOGGING);
+
+      //Get list of files
+      //Add to zip
+      foreach($outFiles as $out){
+          if(!is_file($this->repoLoc."/".$out)){
+              continue;
+          }
+          $res = $zip->addFile($this->repoLoc."/".$out,$fileDir."/".$out);
+          if(!$res){
+              $this->log("Failed adding file $out", SuiteCRMBuildMaker::QUIET_LOGGING);
+              return 1;
+          }
+          $this->log("Added $out", SuiteCRMBuildMaker::VERBOSE_LOGGING);
+      }
+      //Add manifest
+      $res = $zip->addFromString('manifest.php',$this->getManifestString($fromTag,$toTag));
+      if(!$res){
+          $this->log("Failed adding manifest", SuiteCRMBuildMaker::QUIET_LOGGING);
+          return 1;
+      }
+      $zip->addEmptyDir('scripts/');
+      $this->addDirectoryToZip($zip,'scripts',$this->blackList);
+      $deletedFiles = $this->getDeletedFiles($fromTag, $toTag);
+      $filesToRemove = file('scripts/files_to_remove/files.txt');
+      foreach($deletedFiles as $deletedFile){
+        $this->log("Deleted files: $deletedFile", SuiteCRMBuildMaker::VERBOSE_LOGGING);
+        $filesToRemove[] = $deletedFile;
+      }
+      $filesToRemove = array_unique($filesToRemove);
+      $zip->addFromString('scripts/files_to_remove/files.txt',implode("\n",$filesToRemove));
+
+      $zip->close();
+      $this->log("Finished creating $filename", SuiteCRMBuildMaker::NORMAL_LOGGING);
     }
-    $x = 0;
-    addDirectoryToZip($zip,'scripts',$blackList);
 
+    private function setupGit(){
+        $this->git = new PHPGit\Git();
+        if(!file_exists($this->repoLoc . DIRECTORY_SEPARATOR . '.git')){
+            $this->log("No repo! Cloning {$this->repoLoc} now...", NORMAL_LOGGING);
+            $this->git->clone($this->gitLoc, $this->repoLoc);
+        }
+        $this->git->setRepository($this->repoLoc);
+        $this->git->fetch('origin');
+    }
 
- //   $deletedFiles = getDeletedFiles($fromTag, $toTag, $repoLoc);
-//    echo "Deleted files are:\n";
-//print_r($deletedFiles);
-    
-    //Do git diff for deleted
-    //Add to manifest
-    var_dump($zip->getStatusString());
-    $zip->close();
-    //var_dump($zip->getStatusString());
-}
+    function getDeletedFiles($fromTag, $toTag){
+        $this->log("Getting deleted files between $fromTag and $toTag", SuiteCRMBuildMaker::VERBOSE_LOGGING);
+        $command = "cd {$this->repoLoc}; git diff --name-only 'tags/{$fromTag}' 'tags/{$toTag}' --diff-filter=D";
+        $outFiles = array();
+        exec($command,$outFiles);
+        return $outFiles;
+    }
 
-function addDirectoryToZip($zip,$directory,$blackList){
-    foreach(scandir($directory) as $file){
-       if(in_array($file,$blackList)){
-           continue;
-       }
-    //   echo "File is $file\n";
-       $file = $directory."/".$file;
-       if(is_dir($file)){
-           echo "Adding directory $file\n";
-           $zip->addEmptyDir($file);
-           addDirectoryToZip($zip,$file,$blackList);
-       }else{
-           echo "Adding file $file\n";
-           $zip->addFile($file);
-       }
+    function getModifiedFiles($fromTag, $toTag){
+        $this->log("Getting modified files between $fromTag and $toTag", SuiteCRMBuildMaker::VERBOSE_LOGGING);
+        $command = "cd {$this->repoLoc}; git diff --name-only 'tags/{$fromTag}' 'tags/{$toTag}' --diff-filter=ACMRT";
+        $outFiles = array();
+        exec($command,$outFiles);
+        return $outFiles;
+    }
+
+    private function addDirectoryToZip($zip,$directory,$blackList){
+        foreach(scandir($directory) as $file){
+           if(in_array($file,$blackList)){
+               continue;
+           }
+           $file = $directory."/".$file;
+           if(is_dir($file)){
+               $this->log("Adding directory $file", SuiteCRMBuildMaker::VERBOSE_LOGGING);
+               $zip->addEmptyDir($file);
+               $this->addDirectoryToZip($zip,$file,$blackList);
+           }else{
+               $this->log("Adding file $file", SuiteCRMBuildMaker::VERBOSE_LOGGING);
+               $zip->addFile($file);
+           }
+        }
+
+    }
+
+    private function getInstallerFiles($repoLoc){
+        $files = array();
+        $blacklist = array('.','..','.git','.gitignore','README.md');
+        foreach(scandir($repoLoc) as $file){
+            if(in_array($file,$this->blackList)){
+                continue;
+            }
+            $file = $repoLoc."/".$file;
+            if(is_dir($file)){
+                $files = array_merge($files,$this->getInstallerFiles($file));
+            }else{
+                $files[$file] = $file;
+            }
+        }
+        return $files;
+    }
+
+    private function getUpgradeManifestArray($fromTag, $toTag){
+        $manifest = array (
+          'acceptable_sugar_flavors' =>
+          array (
+            0 => 'CE',
+          ),
+          'acceptable_sugar_versions' =>
+          array (
+            'exact_matches' =>
+            array (
+              0 => '6.5.20'
+            ),
+            'regex_matches' =>
+            array (
+            ),
+          ),
+          'author' => 'SalesAgility',
+          'copy_files' =>
+          array (
+            'from_dir' => "SuiteCRM-Upgrade-$fromTag-to-$toTag",
+            'to_dir' => '',
+            'force_copy' =>
+            array (
+            ),
+          ),
+          'description' => '',
+          'icon' => '',
+          'is_uninstallable' => false,
+          'offline_client_applicable' => true,
+          'name' => 'SuiteCRM',
+          'published_date' => date("Y-m-d"),
+          'type' => 'patch',
+          'version' => $toTag,
+        );
+        return $manifest;
+    }
+
+    private function getManifestString($fromTag,$toTag){
+        $manifest = $this->getUpgradeManifestArray($fromTag,$toTag);
+        $str = "<?php\n";
+        $str .= "// SuiteCRM Install Builder\n";
+        $str .= '$manifest = '.var_export($manifest,true).";\n";
+        $str .= "?>\n";
+        return $str;
     }
 
 }
-
-function getManifestString($fromTag,$toTag){
-    $manifest = getUpgradeManifestArray($fromTag,$toTag);
-    $str = "<?php\n";
-    $str .= "// SuiteCRM Install Builder\n";
-    $str .= '$manifest = '.var_export($manifest,true).";\n";
-    $str .= "?>\n";
-    return $str;
-}
-function getUpgradeManifestArray($fromTag, $toTag){
-    $manifest = array (
-      'acceptable_sugar_flavors' => 
-      array (
-        0 => 'CE',
-      ),
-      'acceptable_sugar_versions' => 
-      array (
-        'exact_matches' => 
-        array (
-          0 => '6.5.20'
-        ),
-        'regex_matches' => 
-        array (
-        ),
-      ),
-      'author' => 'SalesAgility',
-      'copy_files' => 
-      array (
-        'from_dir' => "SuiteCRM-Upgrade-$fromTag-to-$toTag",
-        'to_dir' => '',
-        'force_copy' => 
-        array (
-        ),
-      ),
-      'description' => '',
-      'icon' => '',
-      'is_uninstallable' => false,
-      'offline_client_applicable' => true,
-      'name' => 'SuiteCRM',
-      'published_date' => date("Y-m-d"),
-      'type' => 'patch',
-      'version' => $toTag,
-    );
-    return $manifest;
-
-}
-
