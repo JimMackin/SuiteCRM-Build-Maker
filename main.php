@@ -140,7 +140,7 @@ class SuiteCRMBuildMaker{
     private function setupGit(){
         $this->git = new PHPGit\Git();
         if(!file_exists($this->repoLoc . DIRECTORY_SEPARATOR . '.git')){
-            $this->log("No repo! Cloning {$this->repoLoc} now...", NORMAL_LOGGING);
+            $this->log("No repo! Cloning {$this->repoLoc} now...", SuiteCRMBuildMaker::NORMAL_LOGGING);
             $this->git->clone($this->gitLoc, $this->repoLoc);
         }
         $this->git->setRepository($this->repoLoc);
